@@ -1,0 +1,80 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'docker.swarm'
+    environment: 'production'
+
+scrape_configs:
+  # Prometheus mismo
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Métricas de Docker Swarm - Todos los contenedores
+  - job_name: 'docker-containers'
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      - source_labels: [__meta_docker_container_name]
+        regex: '/(.*)'
+        target_label: container_name
+        replacement: '${1}'
+      - source_labels: [__meta_docker_container_label_com_docker_swarm_service_name]
+        target_label: service_name
+      - source_labels: [__meta_docker_container_label_com_docker_swarm_stack_namespace]
+        target_label: stack_name
+      - source_labels: [__meta_docker_container_label_com_docker_swarm_node_id]
+        target_label: node_id
+      - source_labels: [__meta_docker_container_label_com_docker_swarm_task_id]
+        target_label: task_id
+
+  # Métricas de servicios backend (si exponen métricas en puertos específicos)
+  - job_name: 'backend-services'
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      - source_labels: [__meta_docker_container_label_com_docker_swarm_service_name]
+        regex: '.*backend.*'
+        action: keep
+      - source_labels: [__meta_docker_container_name]
+        regex: '/(.*)'
+        target_label: container_name
+        replacement: '${1}'
+      - source_labels: [__meta_docker_container_label_com_docker_swarm_service_name]
+        target_label: service_name
+      - source_labels: [__meta_docker_container_label_com_docker_swarm_stack_namespace]
+        target_label: stack_name
+      # Si tus backends exponen métricas en un puerto específico, descomenta y ajusta:
+      # - source_labels: [__address__]
+      #   regex: '([^:]+):.*'
+      #   target_label: __address__
+      #   replacement: '${1}:8080'
+
+  # Métricas de servicios frontend
+  - job_name: 'frontend-services'
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      - source_labels: [__meta_docker_container_label_com_docker_swarm_service_name]
+        regex: '.*frontend.*'
+        action: keep
+      - source_labels: [__meta_docker_container_name]
+        regex: '/(.*)'
+        target_label: container_name
+        replacement: '${1}'
+      - source_labels: [__meta_docker_container_label_com_docker_swarm_service_name]
+        target_label: service_name
+      - source_labels: [__meta_docker_container_label_com_docker_swarm_stack_namespace]
+        target_label: stack_name
+
+  # Métricas de cAdvisor (si está disponible)
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance

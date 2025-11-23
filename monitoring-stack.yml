@@ -1,0 +1,101 @@
+version: "3.8"
+
+configs:
+  loki_config:
+    file: ./loki-config.yml
+  promtail_config:
+    file: ./promtail-config.yml
+  prometheus_config:
+    file: ./prometheus.yml
+
+services:
+  loki:
+    image: grafana/loki:2.9.3
+    command: -config.file=/etc/loki/loki-config.yml -target=all
+    configs:
+      - source: loki_config
+        target: /etc/loki/loki-config.yml
+    volumes:
+      - loki-data:/loki
+    networks:
+      - monitoring_net
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.monitoring == true
+    ports:
+      - "3100:3100"
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin123!
+      - GF_SERVER_DOMAIN=10.43.102.121
+      - GF_SERVER_ROOT_URL=http://10.43.102.121:3000
+      - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./grafana-dashboard-provisioning.yml:/etc/grafana/provisioning/dashboards/default.yml:ro
+      - ./dashboards:/etc/grafana/dashboards:ro
+    networks:
+      - monitoring_net
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.monitoring == true
+    ports:
+      - "3000:3000"
+
+  promtail:
+    image: grafana/promtail:2.9.3
+    command: -config.file=/etc/promtail/promtail-config.yml
+    configs:
+      - source: promtail_config
+        target: /etc/promtail/promtail-config.yml
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - monitoring_net
+    deploy:
+      mode: global
+      placement:
+        constraints: []
+
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    configs:
+      - source: prometheus_config
+        target: /etc/prometheus/prometheus.yml
+    volumes:
+      - prometheus-data:/prometheus
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - monitoring_net
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.monitoring == true
+    ports:
+      - "9090:9090"
+
+volumes:
+  loki-data:
+  grafana-data:
+  prometheus-data:
+
+networks:
+  monitoring_net:
+    external: true
